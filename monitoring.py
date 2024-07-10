@@ -12,30 +12,46 @@ PROMETHEUS_URL = os.environ.get('PROMETHEUS_URL')
 def fetch_metrics():
     timestamp = datetime.now().strftime('%Y/%m/%d %H:%M:%S')
     print(timestamp)
-    # Query CPU Utilization
-    cpu_query = '100 - (avg by (node) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)'
-    cpu_response = requests.get(PROMETHEUS_URL, params={'query': cpu_query}).json()
-    cpu_json = {result['metric']['node']: result['value'][1] for result in cpu_response['data']['result']}
-    print(cpu_json)
-    print("===========================")
-    # Query Memory Utilization
-    mem_query = '100 - ((node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100)'
-    mem_response = requests.get(PROMETHEUS_URL, params={'query': mem_query}).json()
-    mem_json = {result['metric']['node']: result['value'][1] for result in mem_response['data']['result']}
-    print(mem_json)
-    print("===========================")
-    # # Save the results
-    # with open(f'/path/to/save/cpu_metrics_{timestamp}.json', 'w') as f:
-    #     f.write(f'Timestamp: {timestamp}\n')
-    #     f.write(f'{cpu_response}\n')
+    # Query Nodes
+    node_response = requests.get(PROMETHEUS_URL, params={'query': 'kube_node_info'}).json()
+    node_list     = [node['metric']['node'] for node in node_response['data']['result']]
+    node_json     = {node:0 for node in node_list}
 
-    # with open(f'/path/to/save/mem_metrics_{timestamp}.json', 'w') as f:
-    #     f.write(f'Timestamp: {timestamp}\n')
-    #     f.write(f'{mem_response}\n')
+    # Query CPU Utilization
+    cpu_usage_percentage = '100 - (avg by (node) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)'
+    cpu_usage_percentage_response = requests.get(PROMETHEUS_URL, params={'query': cpu_usage_percentage}).json()
+    cpu_usage_percentage_json = {result['metric']['node']: round(float(result['value'][1]),2) for result in cpu_usage_percentage_response['data']['result']}
+    print("CPU Utilization (%):")
+    print(cpu_usage_percentage_json)
+    print("===========================")
+
+    cpu_reserve_core = 'sum by (node) (kube_pod_container_resource_requests{resource="cpu"})'
+    cpu_reserve_core_response = requests.get(PROMETHEUS_URL, params={'query': cpu_reserve_core}).json()
+    cpu_reserve_core_json = node_json
+    cpu_reserve_core_json.update({result['metric']['node']: round(float(result['value'][1]), 2) for result in cpu_reserve_core_response['data']['result']})
+    print("CPU Reservation (Cores):")
+    print(cpu_reserve_core_json)
+    print("===========================")
+
+    # Query Memory Utilization
+    mem_usage_percentage = '100 - ((node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100)'
+    mem_usage_percentage_response = requests.get(PROMETHEUS_URL, params={'query': mem_usage_percentage}).json()
+    mem_usage_percentage_json = {result['metric']['node']: round(float(result['value'][1]),2) for result in mem_usage_percentage_response['data']['result']}
+    print("Memory Utilization (%):")
+    print(mem_usage_percentage_json)
+    print("===========================")
+
+    mem_reserve_core = 'sum by (node) (kube_pod_container_resource_requests{resource="memory"}) / 1e9'
+    mem_reserve_core_response = requests.get(PROMETHEUS_URL, params={'query': mem_reserve_core}).json()
+    mem_reserve_core_json = node_json
+    mem_reserve_core_json.update({result['metric']['node']: round(float(result['value'][1]),2) for result in mem_reserve_core_response['data']['result']})
+    print("Memory Reservation (GiB):")
+    print(mem_reserve_core_json)
+    print("===========================")
 
 # Schedule the job every minute
 schedule.every(1).minutes.do(fetch_metrics)
-# fetch_metrics()
+fetch_metrics()
 while True:
     schedule.run_pending()
     time.sleep(1)
