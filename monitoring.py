@@ -4,10 +4,16 @@ import schedule
 import time
 from datetime import datetime
 from dotenv import load_dotenv
+from pysnmp.hlapi import *
 
 # Load environment variables from ".env"
 load_dotenv()
 PROMETHEUS_URL = os.environ.get('PROMETHEUS_URL')
+# Replace with your SNMP agent details
+COMMUNITY  = os.environ.get('COMMUNITY')
+PDU_IP     = os.environ.get('PDU_IP')
+POWER_OID  = os.environ.get('POWER_OID')
+ENERGY_OID = os.environ.get('ENERGY_OID')
 
 def fetch_metrics():
     timestamp = datetime.now().strftime('%Y/%m/%d %H:%M:%S')
@@ -49,9 +55,33 @@ def fetch_metrics():
     print(mem_reserve_core_json)
     print("===========================")
 
+def snmp_get(community, ip, oid, port=161):
+    error_indication, error_status, error_index, var_binds = next(
+        getCmd(
+            SnmpEngine(),
+            CommunityData(community),
+            UdpTransportTarget((ip, port)),
+            ContextData(),
+            ObjectType(ObjectIdentity(oid))
+        )
+    )
+
+    if error_indication:
+        print(f"Error: {error_indication}")
+    elif error_status:
+        print(f"Error Status: {error_status.prettyPrint()}")
+    else:
+        for var_bind in var_binds:
+            print(f"{var_bind.prettyPrint()}")
+
 # Schedule the job every minute
 schedule.every(1).minutes.do(fetch_metrics)
 fetch_metrics()
+snmp_get(COMMUNITY, PDU_IP, POWER_OID)
+snmp_get(COMMUNITY, PDU_IP, ENERGY_OID)
 while True:
     schedule.run_pending()
+    snmp_get(COMMUNITY, PDU_IP, POWER_OID)
+    snmp_get(COMMUNITY, PDU_IP, ENERGY_OID)
     time.sleep(1)
+
