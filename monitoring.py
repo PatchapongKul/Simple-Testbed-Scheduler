@@ -29,7 +29,7 @@ def prometheus_get(debug=False):
     prometheus_result['cluster_node_list'] = node_list
 
     # Query CPU Utilization
-    cpu_usage_percentage = '100 - (avg by (node) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)'
+    cpu_usage_percentage = '100 - (avg by (node) (rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100)'
     cpu_usage_percentage_response = requests.get(PROMETHEUS_URL, params={'query': cpu_usage_percentage}).json()
     cpu_usage_percentage_json = {result['metric']['node']: round(float(result['value'][1]),2) for result in cpu_usage_percentage_response['data']['result']}
     prometheus_result['cpu_usage_percentage'] = cpu_usage_percentage_json
