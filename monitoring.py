@@ -26,8 +26,7 @@ def prometheus_get(debug=False):
     # Query Nodes
     node_response = requests.get(PROMETHEUS_URL, params={'query': 'kube_node_info'}).json()
     node_list     = [node['metric']['node'] for node in node_response['data']['result']]
-    node_json     = {node:0 for node in node_list}
-    prometheus_result['node_list'] = node_list
+    prometheus_result['cluster_node_list'] = node_list
 
     # Query CPU Utilization
     cpu_usage_percentage = '100 - (avg by (node) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)'
@@ -35,10 +34,20 @@ def prometheus_get(debug=False):
     cpu_usage_percentage_json = {result['metric']['node']: round(float(result['value'][1]),2) for result in cpu_usage_percentage_response['data']['result']}
     prometheus_result['cpu_usage_percentage'] = cpu_usage_percentage_json
 
+    active_node_list = list(cpu_usage_percentage_json.keys())
+    active_node_json = {node:0 for node in active_node_list}
+    node_status = {node: True if node in active_node_list else False for node in node_list}
+    prometheus_result['node_status'] = node_status
+
     cpu_reserve = 'sum by (node) (kube_pod_container_resource_requests{resource="cpu"})'
     cpu_reserve_response = requests.get(PROMETHEUS_URL, params={'query': cpu_reserve}).json()
-    cpu_reserve_json = node_json
-    cpu_reserve_json.update({result['metric']['node']: round(float(result['value'][1]), 2) for result in cpu_reserve_response['data']['result']})
+    cpu_reserve_json = active_node_json
+    for result in cpu_reserve_response['data']['result']:
+        if len(result['metric']) > 0:
+            node = result['metric']['node']
+            value = round(float(result['value'][1]), 2)
+            cpu_reserve_json[node] = value
+
     prometheus_result['cpu_reserve'] = cpu_reserve_json
 
     # Query Memory Utilization
@@ -49,8 +58,13 @@ def prometheus_get(debug=False):
 
     mem_reserve = 'sum by (node) (kube_pod_container_resource_requests{resource="memory"}) / 1e9'
     mem_reserve_response = requests.get(PROMETHEUS_URL, params={'query': mem_reserve}).json()
-    mem_reserve_json = node_json
-    mem_reserve_json.update({result['metric']['node']: round(float(result['value'][1]),2) for result in mem_reserve_response['data']['result']})
+    mem_reserve_json = active_node_json
+    for result in mem_reserve_response['data']['result']:
+        if len(result['metric']) > 0:
+            node = result['metric']['node']
+            value = round(float(result['value'][1]), 2)
+            mem_reserve_json[node] = value
+
     prometheus_result['mem_reserve'] = mem_reserve_json
 
     # Print Result
@@ -115,7 +129,7 @@ def monitor_cluster():
 
 # Schedule the job every minute
 schedule.every(1).minutes.do(monitor_cluster)
-#print(monitor_cluster())
+print(monitor_cluster())
 while True:
     schedule.run_pending()
     time.sleep(1)
