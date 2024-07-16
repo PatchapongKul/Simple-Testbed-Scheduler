@@ -41,13 +41,12 @@ def prometheus_get(debug=False):
 
     cpu_reserve = 'sum by (node) (kube_pod_container_resource_requests{resource="cpu"})'
     cpu_reserve_response = requests.get(PROMETHEUS_URL, params={'query': cpu_reserve}).json()
-    cpu_reserve_json = active_node_json
+    cpu_reserve_json = active_node_json.copy()
     for result in cpu_reserve_response['data']['result']:
         if len(result['metric']) > 0:
             node = result['metric']['node']
             value = round(float(result['value'][1]), 2)
             cpu_reserve_json[node] = value
-
     prometheus_result['cpu_reserve'] = cpu_reserve_json
 
     # Query Memory Utilization
@@ -58,7 +57,7 @@ def prometheus_get(debug=False):
 
     mem_reserve = 'sum by (node) (kube_pod_container_resource_requests{resource="memory"}) / 1e9'
     mem_reserve_response = requests.get(PROMETHEUS_URL, params={'query': mem_reserve}).json()
-    mem_reserve_json = active_node_json
+    mem_reserve_json = active_node_json.copy()
     for result in mem_reserve_response['data']['result']:
         if len(result['metric']) > 0:
             node = result['metric']['node']
@@ -116,20 +115,35 @@ def snmp_get(target, community, oid, port=161):
             oid_str = str(var_bind[0])
             description = OID_TO_DESCRIPTION[oid_str]
             result[description] = int(var_bind[1].prettyPrint())
+            if description == 'Power':  result[description] *= 10
+            if description == 'Energy': result[description] /= 10
         return result
 
-def monitor_cluster():
+def delete_completed_task():
+    time_completed_task = 'kube_pod_completion_time - kube_pod_start_time'
+    time_completed_task_response = requests.get(PROMETHEUS_URL, params={'query': time_completed_task}).json()
+    print(time_completed_task_response['data']['result'][0]['metric']['pod'])
+
+def monitor_cluster(report=True):
     timestamp = datetime.now().strftime('%Y/%m/%d %H:%M:%S')
     prometheus_result = prometheus_get()
     power_pdu = snmp_get(PDU_IP, COMMUNITY, POWER_OID)
     energy_pdu = snmp_get(PDU_IP, COMMUNITY, ENERGY_OID)
     monitor_result = {'timestamp':timestamp, **prometheus_result, **power_pdu, **energy_pdu}
-    print(monitor_result)
+    if report:
+        # Determine the maximum key length for alignment
+        max_key_length = max(len(key) for key in monitor_result.keys())
+
+        # Print each key-value pair with alignment
+        for key in monitor_result.keys():
+            print(f"{key.ljust(max_key_length)}\t{monitor_result[key]}")
+        print("-------------------------------------------------------------------------")
+    delete_completed_task()
     return monitor_result
 
 # Schedule the job every minute
-schedule.every(1).minutes.do(monitor_cluster)
-print(monitor_cluster())
+schedule.every(5).seconds.do(monitor_cluster)
+monitor_cluster()
 while True:
     schedule.run_pending()
     time.sleep(1)
