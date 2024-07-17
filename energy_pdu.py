@@ -3,6 +3,10 @@ import time
 import schedule
 from dotenv import load_dotenv
 from pysnmp.hlapi import *
+from datetime import datetime
+
+# Load environment variables from ".env"
+load_dotenv()
 
 # Replace with your SNMP agent details
 COMMUNITY  = os.environ.get('COMMUNITY')
@@ -54,14 +58,15 @@ def snmp_get(target, community, oid, port=161):
             if description == 'Energy': result[description] /= 10
         return result
     
-def power_monitor(energy_W_min):
+def power_monitor():
+    global energy_W_min
     power_pdu = snmp_get(PDU_IP, COMMUNITY, POWER_OID)
     energy_W_min += power_pdu['Power'] / 60
-    print(energy_W_min)
+    print(datetime.now().strftime('%Y/%m/%d %H:%M:%S'),'\t',power_pdu['Power'],'\t', round(energy_W_min,2))
 
 # Schedule the job every second
-schedule.every(1).seconds.do(power_monitor(energy_W_min))
-power_monitor(energy_W_min)
+schedule.every(1).second.do(power_monitor)
+power_monitor()
 while True:
     schedule.run_pending()
     time.sleep(1)
