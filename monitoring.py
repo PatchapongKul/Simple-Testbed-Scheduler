@@ -2,6 +2,7 @@ import os
 import requests
 import schedule
 import time
+import csv
 from datetime import datetime
 from dotenv import load_dotenv
 from pysnmp.hlapi import *
@@ -29,7 +30,7 @@ def prometheus_get(debug=False):
     prometheus_result['cluster_node_list'] = node_list
 
     # Query CPU Utilization
-    cpu_usage_percentage = '100 - (avg by (node) (rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100)'
+    cpu_usage_percentage = '100 - (avg by (node) (rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100)'
     cpu_usage_percentage_response = requests.get(PROMETHEUS_URL, params={'query': cpu_usage_percentage}).json()
     cpu_usage_percentage_json = {result['metric']['node']: round(float(result['value'][1]),2) for result in cpu_usage_percentage_response['data']['result']}
     prometheus_result['cpu_usage_percentage'] = cpu_usage_percentage_json
@@ -130,6 +131,21 @@ def monitor_cluster(report=True):
     power_pdu = snmp_get(PDU_IP, COMMUNITY, POWER_OID)
     energy_pdu = snmp_get(PDU_IP, COMMUNITY, ENERGY_OID)
     monitor_result = {'timestamp':timestamp, **prometheus_result, **power_pdu, **energy_pdu}
+
+    # Define CSV file path
+    csv_file = 'monitor_results/monitor_results_15s.csv'
+
+    # Check if the CSV file exists to write header only once
+    file_exists = os.path.isfile(csv_file)
+
+    # Write data to CSV file
+    with open(csv_file, mode='a', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=monitor_result.keys())
+
+        if not file_exists:
+            writer.writeheader()  # Write header only once if file doesn't exist
+
+        writer.writerow(monitor_result)
     if report:
         # Determine the maximum key length for alignment
         max_key_length = max(len(key) for key in monitor_result.keys())
@@ -138,13 +154,12 @@ def monitor_cluster(report=True):
         for key in monitor_result.keys():
             print(f"{key.ljust(max_key_length)}\t{monitor_result[key]}")
         print("-------------------------------------------------------------------------")
-    delete_completed_task()
+    #delete_completed_task()
     return monitor_result
 
 # Schedule the job every minute
-schedule.every(5).seconds.do(monitor_cluster)
+schedule.every(15).seconds.do(monitor_cluster)
 monitor_cluster()
 while True:
     schedule.run_pending()
     time.sleep(1)
-

@@ -1,0 +1,4 @@
+python-dotenv
+schedule
+pysnmp==4.4.12
+requests
